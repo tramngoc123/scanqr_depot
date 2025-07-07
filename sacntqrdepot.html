@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DepotScan - Quản lý Container</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
+        header { background: #2c3e50; color: #fff; padding: 10px 20px; text-align: center; }
+        nav { display: flex; background: #34495e; flex-wrap: wrap; }
+        nav button { flex: 1; padding: 10px; background: #34495e; color: #fff; border: none; cursor: pointer; }
+        nav button:hover { background: #2c3e50; }
+        .tab { display: none; padding: 20px; max-width: 600px; margin: auto; }
+        .active { display: block; }
+        input, select, button { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ddd; border-radius: 4px; }
+        button { background: #28a745; color: white; cursor: pointer; border: none; }
+        button:hover { opacity: 0.9; }
+        .container-card { background: #fff; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .container-card button { width: auto; padding: 5px 10px; margin-right: 5px; margin-top: 5px; font-size: 0.9em; }
+        .container-card .delete-btn { background: #dc3545; }
+        .qr-code { margin-top: 10px; display: block; } /* Ensure canvas is block for proper sizing */
+        .auth-box { max-width: 400px; margin: 50px auto; background: #fff; padding: 20px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+        #searchInput { margin: 10px auto; display: block; width: 90%; padding: 8px; }
+        #qr-result { margin-top: 10px; background: #e9ecef; padding: 15px; border-radius: 5px; border: 1px solid #ced4da; }
+        #qr-result h3 { margin-top: 0; color: #0056b3; }
+        #qr-result .not-found { color: #dc3545; font-weight: bold; }
+        .qr-scan-details button { width: auto; margin-right: 5px; }
+        #qr-image-input { display: none; } /* Ẩn input file gốc */
+        .qr-action-buttons { display: flex; justify-content: space-around; margin-top: 15px; }
+        .qr-action-buttons button { flex: 1; margin: 0 5px; }
+    </style>
+</head>
+<body>
+    <header><h1>DepotScan</h1></header>
+
+    <div id="auth" class="auth-box">
+        <h2>Đăng ký / Đăng nhập</h2>
+        <input type="text" id="authUser" placeholder="Tên người dùng" />
+        <input type="password" id="authPass" placeholder="Mật khẩu" />
+        <button onclick="login()">Bắt đầu</button>
+    </div>
+
+    <div id="app" style="display:none">
+        <nav>
+            <button onclick="switchTab('addTab')"><i class="fas fa-plus-square"></i> Thêm Container</button>
+            <button onclick="switchTab('listTab')"><i class="fas fa-list"></i> Danh sách Container</button>
+            <button onclick="switchTab('scanTab')"><i class="fas fa-qrcode"></i> Quét QR</button>
+        </nav>
+
+        <div id="addTab" class="tab active">
+            <h2>Thêm Container</h2>
+            <input id="contId" placeholder="Mã container (duy nhất)" />
+            <input id="contPos" placeholder="Vị trí trong bãi" />
+            <select id="contStatus">
+                <option value="Còn nguyên">Còn nguyên</option>
+                <option value="Đã rút hàng">Đã rút hàng</option>
+                <option value="Đang sửa chữa">Đang sửa chữa</option>
+                <option value="Đang vận chuyển">Đang vận chuyển</option>
+            </select>
+            <input type="datetime-local" id="contTime" />
+            <input id="contNote" placeholder="Ghi chú" />
+            <button onclick="addContainer()">Lưu container</button>
+        </div>
+
+        <div id="listTab" class="tab">
+            <h2>Danh sách Container</h2>
+            <input id="searchInput" placeholder="Tìm theo mã container..." oninput="filterContainers(this.value)" />
+            <div id="containerList"></div>
+        </div>
+
+        <div id="scanTab" class="tab">
+            <h2><i class="fas fa-qrcode"></i> Quét mã QR</h2>
+            <div id="qr-reader" style="width: 100%;"></div>
+            <div class="qr-action-buttons">
+                <button onclick="document.getElementById('qr-image-input').click()">Ảnh có sẵn</button>
+                <input type="file" id="qr-image-input" accept="image/*" onchange="scanFromImage(event)">
+                <button onclick="startQRScanner()">Khởi động lại Camera</button>
+            </div>
+            <div id="qr-result" style="margin-top: 10px; min-height: 100px;">
+                <p>Hướng camera vào mã QR để quét.</p>
+                <p>Đảm bảo đã cấp quyền truy cập camera cho trình duyệt.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Biến toàn cục để lưu trữ instance của Html5Qrcode
+        let html5QrCodeScanner = null;
+
+        function login() {
+            const user = document.getElementById('authUser').value;
+            const pass = document.getElementById('authPass').value;
+            // Trong ứng dụng thực tế, bạn sẽ gửi thông tin này đến máy chủ để xác thực.
+            // Ở đây, chỉ cần có bất kỳ ký tự nào là được coi là đăng nhập thành công.
+            if (user && pass) {
+                document.getElementById('auth').style.display = 'none';
+                document.getElementById('app').style.display = 'block';
+                loadContainers();
+            } else {
+                alert('Vui lòng nhập tên và mật khẩu.');
+            }
+        }
+
+        async function switchTab(tabId) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+
+            // Luôn dừng scanner khi chuyển tab
+            if (html5QrCodeScanner && html5QrCodeScanner.is
+                && html5QrCodeScanner.isScanning) { // Kiểm tra đúng trạng thái
+                try {
+                    await html5QrCodeScanner.stop();
+                    console.log("QR scanner stopped.");
+                } catch (err) {
+                    console.warn("Error stopping QR scanner:", err);
+                }
+            }
+
+            // Khởi động scanner chỉ khi vào tab quét QR
+            if (tabId === 'scanTab') {
+                startQRScanner();
+            } else {
+                // Xóa kết quả quét cũ khi chuyển khỏi tab quét
+                document.getElementById("qr-result").innerHTML = '<p>Hướng camera vào mã QR để quét.</p><p>Đảm bảo đã cấp quyền truy cập camera cho trình duyệt.</p>';
+            }
+        }
+
+        function getStoredContainers() {
+            return JSON.parse(localStorage.getItem('containers') || '[]');
+        }
+
+        function saveContainers(containers) {
+            localStorage.setItem('containers', JSON.stringify(containers));
+        }
+
+        function addContainer() {
+            const id = document.getElementById('contId').value.trim();
+            const pos = document.getElementById('contPos').value.trim();
+            const status = document.getElementById('contStatus').value;
+            const time = document.getElementById('contTime').value;
+            const note = document.getElementById('contNote').value.trim();
+
+            if (!id || !pos || !time) {
+                alert('Vui lòng nhập đầy đủ thông tin: Mã container, Vị trí và Giờ vào.');
+                return;
+            }
+
+            const containers = getStoredContainers();
+            if (containers.find(c => c.id === id)) {
+                alert('Mã container đã tồn tại! Vui lòng nhập mã khác.');
+                return;
+            }
+
+            const data = { id, pos, status, time, note };
+            containers.push(data);
+            saveContainers(containers);
+            renderContainer(data); // Thêm vào danh sách hiển thị
+            clearForm();
+            alert('Container đã được lưu thành công!');
+        }
+
+        function renderContainer(data) {
+            const { id, pos, status, time, note } = data;
+            // Mã QR giờ đây chỉ chứa ID container
+            const infoForQR = id;
+
+            const contCard = document.createElement('div');
+            contCard.className = 'container-card';
+            contCard.dataset.id = id;
+            contCard.innerHTML = `
+                <strong>Mã: ${id}</strong><br>
+                Vị trí: ${pos}<br>
+                Trạng thái: ${status}<br>
+                Giờ vào: ${time}<br>
+                Ghi chú: ${note || '(Không có)'}<br>
+                <canvas class="qr-code" id="qr-${id}"></canvas><br>
+                <button onclick="downloadQRCode('${id}')">⬇️ Xuất mã QR</button>
+                <button class="delete-btn" onclick="deleteContainer('${id}', this)">❌ Xóa</button>
+            `;
+            document.getElementById('containerList').prepend(contCard); // Thêm vào đầu danh sách
+
+            // Tạo mã QR
+            const canvas = document.getElementById(`qr-${id}`);
+            if (canvas && QRCode && QRCode.toCanvas) {
+                QRCode.toCanvas(canvas, infoForQR, { width: 128, errorCorrectionLevel: 'H' }, err => {
+                    if (err) {
+                        console.error('Lỗi khi tạo mã QR:', err);
+                        canvas.style.display = 'none'; // Ẩn canvas nếu có lỗi
+                    }
+                });
+            }
+        }
+
+        function deleteContainer(id, button) {
+            if (!confirm(`Bạn có chắc muốn xóa container có mã "${id}" không?`)) {
+                return;
+            }
+            let containers = getStoredContainers();
+            containers = containers.filter(c => c.id !== id);
+            saveContainers(containers);
+            button.parentElement.remove();
+            alert(`Container "${id}" đã được xóa.`);
+        }
+
+        function clearForm() {
+            document.getElementById('contId').value = '';
+            document.getElementById('contPos').value = '';
+            document.getElementById('contNote').value = '';
+            document.getElementById('contTime').value = '';
+            document.getElementById('contStatus').value = 'Còn nguyên'; // Reset status
+        }
+
+        function loadContainers() {
+            const containerListDiv = document.getElementById('containerList');
+            containerListDiv.innerHTML = ''; // Xóa danh sách cũ trước khi tải lại
+            const containers = getStoredContainers();
+            containers.reverse().forEach(renderContainer); // Hiển thị cái mới nhất lên đầu
+        }
+
+        function filterContainers(keyword) {
+            keyword = keyword.toLowerCase();
+            document.querySelectorAll('.container-card').forEach(card => {
+                const id = card.dataset.id.toLowerCase();
+                card.style.display = id.includes(keyword) ? '' : 'none';
+            });
+        }
+
+        async function startQRScanner() {
+            const qrCodeRegionId = "qr-reader";
+            // Chỉ khởi tạo scanner nếu chưa có
+            if (!html5QrCodeScanner) {
+                html5QrCodeScanner = new Html5Qrcode(qrCodeRegionId);
+            }
+            const qrResultDiv = document.getElementById("qr-result");
+            qrResultDiv.innerHTML = '<p>Đang khởi động camera...</p>';
+
+            try {
+                // Đảm bảo dừng scanner hiện tại trước khi khởi động lại
+                if (html5QrCodeScanner.isScanning) {
+                    await html5QrCodeScanner.stop();
+                    console.log("Scanner stopped before restart.");
+                }
+
+                const devices = await Html5Qrcode.getCameras();
+                if (devices && devices.length) {
+                    // Ưu tiên camera sau (environment) nếu có, ngược lại dùng camera đầu tiên
+                    const cameraId = devices.find(device => device.facingMode === 'environment')?.id || devices[0].id;
+
+                    await html5QrCodeScanner.start(
+                        cameraId,
+                        {
+                            fps: 10,
+                            qrbox: { width: 250, height: 250 },
+                            rememberLastUsedCamera: true // Ghi nhớ camera đã dùng lần cuối
+                        },
+                        (qrCodeMessage) => {
+                            // Xử lý khi quét thành công
+                            displayScannedContainerInfo(qrCodeMessage);
+                            html5QrCodeScanner.stop().then(() => {
+                                console.log("QR scanning stopped after success.");
+                            }).catch(err => {
+                                console.warn("Error stopping QR scanner after success:", err);
+                            });
+                        },
+                        (errorMessage) => {
+                            // Lỗi liên tục trong quá trình quét (không phải lỗi khởi động)
+                            // console.warn(`QR Code scanning error: ${errorMessage}`);
+                        }
+                    );
+                    qrResultDiv.innerHTML = '<p>Đã sẵn sàng quét. Hướng camera vào mã QR.</p>';
+                } else {
+                    qrResultDiv.innerHTML = '<p class="not-found">Không tìm thấy camera nào trên thiết bị này.</p>';
+                }
+            } catch (err) {
+                qrResultDiv.innerHTML = `<p class="not-found">Lỗi khi khởi động camera: ${err.message || err}.</p>
+                                        <p>Vui lòng kiểm tra lại quyền truy cập camera của trình duyệt trong cài đặt thiết bị.</p>`;
+                console.error("Lỗi khởi động Html5Qrcode:", err);
+            }
+        }
+
+        async function scanFromImage(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                return;
+            }
+
+            const qrResultDiv = document.getElementById("qr-result");
+            qrResultDiv.innerHTML = '<p>Đang xử lý ảnh...</p>';
+
+            // Dừng camera nếu đang chạy để tránh xung đột
+            if (html5QrCodeScanner && html5QrCodeScanner.is
+                && html5QrCodeScanner.isScanning) {
+                try {
+                    await html5QrCodeScanner.stop();
+                    console.log("Camera stopped before image scan.");
+                } catch (err) {
+                    console.warn("Error stopping camera before image scan:", err);
+                }
+            }
+            
+            // Xóa nội dung hiển thị camera
+            document.getElementById("qr-reader").innerHTML = '';
+
+            // Sử dụng Html5Qrcode.scanFile để quét từ ảnh
+            Html5Qrcode.scanFile(file, true)
+                .then(qrCodeMessage => {
+                    displayScannedContainerInfo(qrCodeMessage);
+                })
+                .catch(err => {
+                    qrResultDiv.innerHTML = `<p class="not-found">Không thể tìm thấy mã QR trong ảnh này. Vui lòng thử ảnh khác.</p>
+                                            <p>Lỗi: ${err}</p>`;
+                    console.error("Error scanning image:", err);
+                });
+        }
+
+        function displayScannedContainerInfo(containerId) {
+            const qrResultDiv = document.getElementById("qr-result");
+            const containers = getStoredContainers();
+            const foundContainer = containers.find(c => c.id === containerId);
+
+            if (foundContainer) {
+                qrResultDiv.innerHTML = `
+                    <h3>Thông tin Container Đã Quét:</h3>
+                    <strong>Mã: ${foundContainer.id}</strong><br>
+                    Vị trí: ${foundContainer.pos}<br>
+                    Trạng thái: ${foundContainer.status}<br>
+                    Giờ vào: ${foundContainer.time}<br>
+                    Ghi chú: ${foundContainer.note || '(Không có)'}<br>
+                    <div class="qr-scan-details" style="margin-top: 10px;">
+                        <button onclick="downloadQRCode('${foundContainer.id}')">⬇️ Xuất mã QR</button>
+                        <button class="delete-btn" onclick="deleteContainer('${foundContainer.id}', this.parentElement.parentElement)">❌ Xóa Container</button>
+                        <button onclick="switchTab('addTab'); 
+                                        document.getElementById('contId').value='${foundContainer.id}'; 
+                                        document.getElementById('contPos').value='${foundContainer.pos}';
+                                        document.getElementById('contStatus').value='${foundContainer.status}';
+                                        document.getElementById('contTime').value='${foundContainer.time}';
+                                        document.getElementById('contNote').value='${foundContainer.note}';">✏️ Chỉnh sửa (điền vào form)</button>
+                    </div>
+                `;
+            } else {
+                qrResultDiv.innerHTML = `
+                    <p class="not-found">Không tìm thấy container với mã: <strong>${containerId}</strong> trong danh sách.</p>
+                    <p>Bạn có muốn thêm container này không?</p>
+                    <button onclick="switchTab('addTab'); document.getElementById('contId').value='${containerId}';">➕ Thêm container mới với mã này</button>
+                `;
+            }
+        }
+
+        function downloadQRCode(id) {
+            const canvas = document.getElementById(`qr-${id}`);
+            if (!canvas) {
+                alert("Không tìm thấy mã QR để tải xuống! Vui lòng chuyển đến tab 'Danh sách Container' và thử lại.");
+                return;
+            }
+            const link = document.createElement('a');
+            link.download = `QR_Container_${id}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        // Tự động tải container khi ứng dụng khởi chạy (sau khi đăng nhập)
+        // Được gọi trong hàm login()
+    </script>
+</body>
+</html>
