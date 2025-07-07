@@ -93,6 +93,8 @@
         function login() {
             const user = document.getElementById('authUser').value;
             const pass = document.getElementById('authPass').value;
+            // Trong ứng dụng thực tế, bạn sẽ gửi thông tin này đến máy chủ để xác thực.
+            // Ở đây, chỉ cần có bất kỳ ký tự nào là được coi là đăng nhập thành công.
             if (user && pass) {
                 document.getElementById('auth').style.display = 'none';
                 document.getElementById('app').style.display = 'block';
