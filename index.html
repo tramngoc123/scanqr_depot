@@ -93,8 +93,6 @@
         function login() {
             const user = document.getElementById('authUser').value;
             const pass = document.getElementById('authPass').value;
-            // Trong ứng dụng thực tế, bạn sẽ gửi thông tin này đến máy chủ để xác thực.
-            // Ở đây, chỉ cần có bất kỳ ký tự nào là được coi là đăng nhập thành công.
             if (user && pass) {
                 document.getElementById('auth').style.display = 'none';
                 document.getElementById('app').style.display = 'block';
@@ -109,8 +107,7 @@
             document.getElementById(tabId).classList.add('active');
 
             // Luôn dừng scanner khi chuyển tab
-            if (html5QrCodeScanner && html5QrCodeScanner.is
-                && html5QrCodeScanner.isScanning) { // Kiểm tra đúng trạng thái
+            if (html5QrCodeScanner && html5QrCodeScanner.isScanning) { // Kiểm tra đúng trạng thái
                 try {
                     await html5QrCodeScanner.stop();
                     console.log("QR scanner stopped.");
@@ -291,8 +288,7 @@
             qrResultDiv.innerHTML = '<p>Đang xử lý ảnh...</p>';
 
             // Dừng camera nếu đang chạy để tránh xung đột
-            if (html5QrCodeScanner && html5QrCodeScanner.is
-                && html5QrCodeScanner.isScanning) {
+            if (html5QrCodeScanner && html5QrCodeScanner.isScanning) {
                 try {
                     await html5QrCodeScanner.stop();
                     console.log("Camera stopped before image scan.");
@@ -308,11 +304,15 @@
             Html5Qrcode.scanFile(file, true)
                 .then(qrCodeMessage => {
                     displayScannedContainerInfo(qrCodeMessage);
+                    // Sau khi quét xong, đặt lại input file để có thể chọn lại cùng một ảnh
+                    event.target.value = ''; 
                 })
                 .catch(err => {
                     qrResultDiv.innerHTML = `<p class="not-found">Không thể tìm thấy mã QR trong ảnh này. Vui lòng thử ảnh khác.</p>
                                             <p>Lỗi: ${err}</p>`;
                     console.error("Error scanning image:", err);
+                    // Sau khi quét xong, đặt lại input file để có thể chọn lại cùng một ảnh
+                    event.target.value = '';
                 });
         }
 
@@ -360,9 +360,6 @@
             link.href = canvas.toDataURL('image/png');
             link.click();
         }
-
-        // Tự động tải container khi ứng dụng khởi chạy (sau khi đăng nhập)
-        // Được gọi trong hàm login()
     </script>
 </body>
 </html>
